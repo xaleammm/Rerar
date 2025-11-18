@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Мини-слот — Kodex</title>
+<style>
+  :root{
+    --bg:#0b1020;
+    --panel:#0f1724;
+    --accent:#ffd633;
+    --text:#e6eef8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background:linear-gradient(180deg,#071028 0%, #0b1020 100%);
+    color:var(--text);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    height:100vh;
+  }
+
+  .wrap{
+    width:420px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.12));
+    border:1px solid rgba(255,255,255,0.04);
+    border-radius:12px;
+    padding:20px;
+    box-shadow: 0 10px 30px rgba(2,6,23,0.6);
+  }
+
+  h1{font-size:18px;margin:0 0 12px 0;color:var(--accent)}
+  .balance{
+    font-weight:600;
+    margin-bottom:12px;
+  }
+
+  .reels{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    margin-bottom:14px;
+  }
+
+  .reel{
+    width:110px;
+    height:110px;
+    background:var(--panel);
+    border-radius:10px;
+    overflow:hidden;
+    position:relative;
+    border:1px solid rgba(255,255,255,0.03);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .strip{
+    position:absolute;
+    top:0;
+    left:0;
+    width:100%;
+    transition: transform 800ms cubic-bezier(.2,.9,.3,1);
+  }
+
+  .symbol{
+    width:100%;
+    height:110px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:48px;
+    letter-spacing:1px;
+    user-select:none;
+  }
+
+  .controls{
+    display:flex;
+    gap:8px;
+    justify-content:space-between;
+    align-items:center;
+  }
+
+  .left{
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
+
+  button{
+    background:linear-gradient(180deg,#1b2430,#11151b);
+    border:1px solid rgba(255,255,255,0.03);
+    padding:8px 12px;
+    border-radius:8px;
+    color:var(--text);
+    cursor:pointer;
+    font-weight:600;
+  }
+
+  button:active{transform:translateY(1px)}
+  .spin{background:linear-gradient(90deg,#ffb84d,#ff8a00); color:#0b1020; box-shadow:0 6px 18px rgba(255,136,0,0.18)}
+  .small{padding:6px 8px;font-size:13px}
+  .message{height:20px; font-size:14px; text-align:center; margin-top:10px}
+  .probabilities{font-size:12px;color:#a8b6d3;margin-top:10px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Kodex — Мини-слот</h1>
+    <div class="balance">Баланс: <span id="balance">100</span> монет</div>
+
+    <div class="reels">
+      <div class="reel" id="reel0"><div class="strip" id="strip0"></div></div>
+      <div class="reel" id="reel1"><div class="strip" id="strip1"></div></div>
+      <div class="reel" id="reel2"><div class="strip" id="strip2"></div></div>
+    </div>
+
+    <div class="controls">
+      <div class="left">
+        <button id="betDown" class="small">−</button>
+        <div style="min-width:72px;text-align:center">Ставка: <span id="bet">1</span></div>
+        <button id="betUp" class="small">+</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="spin" class="spin">SPIN</button>
+        <button id="max" class="small">MAX</button>
+      </div>
+    </div>
+
+    <div class="message" id="message"></div>
+    <div class="probabilities" id="probs">
+      Символы: 7, 🍒 вишня, BAR, 🍇 виноград. Вероятности можно менять в коде.
+    </div>
+  </div>
+
+<script>
+/*
+  Символы и вероятности:
+  - 7
+  - cherry (вишня)
+  - bar
+  - grapes (виноград)
+
+  Чтобы поменять шансы — измените массив `symbols` поле weight.
+  Логика: каждая катушка выбирает символ независимо по весам.
+*/
+
+const symbols = [
+  {id:'7',   label:'7',    weight:6},   // более редкий — ставьте меньше
+  {id:'ch',  label:'🍒',  weight:20},
+  {id:'bar', label:'BAR',  weight:10},
+  {id:'gr',  label:'🍇',  weight:18},
+];
+
+// выплаты (коэффициенты) — можно настроить
+const payouts = {
+  '7,7,7': 100,
+  'ch,ch,ch': 20,
+  'bar,bar,bar': 40,
+  'gr,gr,gr': 15,
+  // частичные комбинации
+  'ch,ch,*': 2,
+  '*,ch,ch': 2,
+};
+
+// начальные значения
+let balance = 300;
+let bet = 2;
+const minBet = 1;
+const maxBet = 2000;
+const reelsCount = 3;
+
+// UI элементы
+const balanceEl = document.getElementById('balance');
+const betEl = document.getElementById('bet');
+const messageEl = document.getElementById('message');
+const spinBtn = document.getElementById('spin');
+const maxBtn = document.getElementById('max');
+const betDown = document.getElementById('betDown');
+const betUp = document.getElementById('betUp');
+
+function updateUI(){
+  balanceEl.textContent = balance;
+  betEl.textContent = bet;
+}
+
+// build visual strips — each reel will contain repeated sequence to animate
+function buildStrips(){
+  for(let r=0;r<reelsCount;r++){
+    const strip = document.getElementById('strip'+r);
+    strip.innerHTML = '';
+    // we'll repeat symbols 8 times for smooth spin
+    for(let i=0;i<8;i++){
+      for(const s of symbols){
+        const div = document.createElement('div');
+        div.className = 'symbol';
+        div.dataset.id = s.id;
+        div.textContent = s.label;
+        strip.appendChild(div);
+      }
+    }
+  }
+}
+
+// Random выбор по весам
+function weightedPick(){
+  const total = symbols.reduce((acc,s)=>acc+s.weight,0);
+  let rnd = Math.random()*total;
+  for(const s of symbols){
+    if(rnd < s.weight) return s;
+    rnd -= s.weight;
+  }
+  return symbols[symbols.length-1];
+}
+
+// Получить результат (id-ы) для всех катушек
+function spinOnce(){
+  const result = [];
+  for(let i=0;i<reelsCount;i++){
+    result.push(weightedPick().id);
+  }
+  return result;
+}
+
+// Определить выплату по результату
+function evaluate(result){
+  const key = result.join(',');
+  if(payouts[key]) return payouts[key];
+
+  // частичные примеры: две вишни подряд (в начале или конце)
+  if((result[0]==='ch' && result[1]==='ch') || (result[1]==='ch' && result[2]==='ch')) return payouts['ch,ch,*'] || 0;
+
+  return 0;
+}
+
+// анимируем перемещение полос (strip) так, чтобы центр каждой катушки остановился на нужном символе
+function animateReels(finalIds){
+  return new Promise(resolve=>{
+    const baseDelay = 200;
+    for(let r=0;r<reelsCount;r++){
+      const strip = document.getElementById('strip'+r);
+      // высота одного символа
+      const symHeight = strip.firstElementChild.getBoundingClientRect().height || 110;
+      // найдём индекс первого вхождения нужного символа внутри strip (в первой повторяющейся группе)
+      const nodes = Array.from(strip.querySelectorAll('.symbol'));
+      let targetIndex = nodes.findIndex(n=>n.dataset.id===finalIds[r]);
+      if(targetIndex === -1) targetIndex = 0;
+      // хотим остановиться так, чтобы выбранный символ оказался по центру: примерно второй блок (падение вниз)
+      // т.к. у нас много повторов, добавим полный цикл + индекс, чтобы получить плавную прокрутку.
+      const cycles = 4 + r; // разные по времени
+      const totalSymbols = nodes.length;
+      const finalPosIndex = cycles * (symbols.length) + targetIndex;
+      const translateY = - finalPosIndex * symHeight + ( (strip.parentElement.clientHeight - symHeight)/2 );
+      // установим переход с разной длительностью
+      strip.style.transition = `transform ${900 + r*250}ms cubic-bezier(.2,.9,.3,1)`;
+      // задержка чтобы катушки не стартовали одновременно
+      setTimeout(()=> strip.style.transform = `translateY(${translateY}px)`, r*baseDelay);
+    }
+    // resolve после самой длинной анимации
+    const maxTime = 900 + (reelsCount-1)*250 + baseDelay*(reelsCount-1);
+    setTimeout(resolve, maxTime + 80);
+  });
+}
+
+async function doSpin(){
+  if(balance < bet){
+    messageEl.textContent = 'Недостаточно монет.';
+    return;
+  }
+  balance -= bet;
+  updateUI();
+  spinBtn.disabled = true;
+  messageEl.textContent = 'Крутим...';
+
+  // определяем финальные символы (по весам)
+  const final = spinOnce(); // массив id-ов
+  // визуализируем: сначала перемешаем полосы для эффекта
+  buildStrips();
+
+  // немножко рандома в начале, чтобы strip был не в нулевой позиции
+  for(let r=0;r<reelsCount;r++){
+    const strip = document.getElementById('strip'+r);
+    strip.style.transition = 'none';
+    strip.style.transform = `translateY(${ -Math.random()*300 }px)`;
+  }
+
+  // запускаем анимацию, дождёмся её окончания
+  await animateReels(final);
+
+  // оценка результата
+  const winMultiplier = evaluate(final);
+  const win = winMultiplier * bet;
+  if(win > 0){
+    balance += win;
+    messageEl.textContent = `Вы выиграли ${win} монет! (${final.map(idToLabel).join(' ')})`;
+  } else {
+    messageEl.textContent = `Проигрыш. (${final.map(idToLabel).join(' ')})`;
+  }
+  updateUI();
+  spinBtn.disabled = false;
+}
+
+// вспомогательные UI
+function idToLabel(id){
+  const s = symbols.find(x=>x.id===id);
+  return s ? s.label : id;
+}
+
+// кнопки
+spinBtn.addEventListener('click', doSpin);
+betDown.addEventListener('click', ()=>{
+  bet = Math.max(minBet, bet-1); updateUI();
+});
+betUp.addEventListener('click', ()=>{
+  bet = Math.min(maxBet, bet+1); updateUI();
+});
+maxBtn.addEventListener('click', ()=>{
+  bet = Math.min(maxBet, Math.max(minBet, Math.floor(balance/1) || minBet)); updateUI();
+});
+
+// инициализация
+buildStrips();
+updateUI();
+
+// показываем текущие вероятности (расчитанные из весов)
+(function showProbabilities(){
+  const total = symbols.reduce((a,s)=>a+s.weight,0);
+  const lines = symbols.map(s=>{
+    const p = (s.weight/total*100).toFixed(1);
+    return `${s.label} — ${p}%`;
+  });
+  document.getElementById('probs').textContent = 'Шансы (примерно): ' + lines.join(' · ');
+})();
+</script>
+</body>
+</html>
